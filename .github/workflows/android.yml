@@ -25,13 +25,14 @@ env:
   STAGING_DIR: app/build/outputs/apk/all
   ASSET_DIR: app/build/outputs/apk/release-assets
   ARTIFACT_PASSWORD: ${{ secrets.ARTIFACT_PASSWORD }}
+  # ✅ job内部才可以读取这个表达式，顶层run-name/concurrency不能用env
   TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
   TARGET_SOURCE_BRANCH: dev
   TARGET_MODULE_REPO: Xposed-Modules-Repo/io.github.aoguai.sesameag
   PUBLISH_TO_XPOSED_REPO: "false"
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
