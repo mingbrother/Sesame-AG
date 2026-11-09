@@ -38,10 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      # ✅ 移到job内部，这里才支持github表达式
-      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
     outputs:
+      target_tag: ${{ steps.meta.outputs.target_tag }}
       ready: ${{ steps.check.outputs.ready }}
       reason: ${{ steps.check.outputs.reason }}
       tag_valid: ${{ steps.meta.outputs.tag_valid }}
@@ -78,9 +76,11 @@ jobs:
       - name: Resolve Release Metadata
         id: meta
         shell: bash
+        env:
+          TARGET_TAG_RAW: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          RELEASE_TAG_RAW="${TARGET_TAG}"
+          RELEASE_TAG_RAW="${TARGET_TAG_RAW}"
           release_tag_regex='^([0-9]+)-(.+)$'
           tag_valid="false"
           tag_version_code=""
@@ -102,6 +102,7 @@ jobs:
             exit 1
           fi
           xposed_tag="${RELEASE_TAG_RAW}"
+          echo "target_tag=${RELEASE_TAG_RAW}" >> "$GITHUB_OUTPUT"
           echo "tag_valid=${tag_valid}" >> "$GITHUB_OUTPUT"
           echo "tag_version_code=${tag_version_code}" >> "$GITHUB_OUTPUT"
           echo "configured_version_name=${configured_version_name}" >> "$GITHUB_OUTPUT"
@@ -112,7 +113,7 @@ jobs:
         id: check
         shell: bash
         env:
-          RELEASE_TAG_RAW: ${{ env.TARGET_TAG }}
+          RELEASE_TAG_RAW: ${{ steps.meta.outputs.target_tag }}
           TAG_VALID: ${{ steps.meta.outputs.tag_valid }}
           TAG_VERSION_CODE: ${{ steps.meta.outputs.tag_version_code }}
           CONFIGURED_VERSION_NAME: ${{ steps.meta.outputs.configured_version_name }}
@@ -225,10 +226,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # release job 也加上 TARGET_TAG
-      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
+      RELEASE_TAG_RAW: ${{ needs.preflight.outputs.target_tag }}
       OFFICIAL_SIGNING_CERT_SHA256: ${{ needs.preflight.outputs.official_signing_cert_sha256 }}
-      RELEASE_TAG_RAW: ${{ env.TARGET_TAG }}
     steps:
       - name: Set Timezone to Asia/Shanghai
         shell: bash
@@ -347,7 +346,7 @@ jobs:
             )
             if [[ ${#fingerprints[@]} -ne 1 || "${fingerprints[0]}" != "${OFFICIAL_SIGNING_CERT_SHA256}" ]]; then
               echo "Unexpected signing certificate for ${file}" >&2
-              echo "Expected: ${OFFICIAL_SIGNING_CERT_SHA256}" >&2
+              echo "Expected: ${OFFICIAL_SIGNING_CERT_SHA256}"
               printf 'Actual: %s\n' "${fingerprints[*]:-<none>}" >&2
               exit 1
             fi
@@ -364,7 +363,7 @@ jobs:
           GITHUB_API_TOKEN: ${{ secrets.TARGET_REPO_PAT || github.token }}
           REPOSITORY: ${{ github.repository }}
           XPOSED_TAG: ${{ needs.preflight.outputs.xposed_tag }}
-          RELEASE_TAG_RAW: ${{ env.TARGET_TAG }}
+          RELEASE_TAG_RAW: ${{ needs.preflight.outputs.target_tag }}
         run: |
           set -euo pipefail
           body_path="${RUNNER_TEMP}/xposed-release-body.md"
