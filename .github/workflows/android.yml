@@ -25,8 +25,6 @@ env:
   STAGING_DIR: app/build/outputs/apk/all
   ASSET_DIR: app/build/outputs/apk/release-assets
   ARTIFACT_PASSWORD: ${{ secrets.ARTIFACT_PASSWORD }}
-  # ✅ job内部才可以读取这个表达式，顶层run-name/concurrency不能用env
-  TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
   TARGET_SOURCE_BRANCH: dev
   TARGET_MODULE_REPO: Xposed-Modules-Repo/io.github.aoguai.sesameag
   PUBLISH_TO_XPOSED_REPO: "false"
@@ -40,6 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # ✅ 移到job内部，这里才支持github表达式
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
     outputs:
       ready: ${{ steps.check.outputs.ready }}
       reason: ${{ steps.check.outputs.reason }}
@@ -160,7 +161,6 @@ jobs:
             reason="标签中的 versionName (${VERSION_NAME}) 与 gradle.properties 中配置的 appVersion (${CONFIGURED_VERSION_NAME}) 不一致"
           elif [[ "${TAG_VERSION_CODE}" != "${VERSION_CODE}" ]]; then
             reason="标签中的 versionCode (${TAG_VERSION_CODE}) 与当前提交计算得到的 versionCode (${VERSION_CODE}) 不一致"
-          # 下面一行注释：取消强制要求提交必须在dev分支，方便手动调试打包；正式发布tag时建议打开
           # elif ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/${TARGET_SOURCE_BRANCH}"; then
           #   reason="标签 ${RELEASE_TAG_RAW} 指向的提交不在 ${TARGET_SOURCE_BRANCH} 分支上"
           elif [[ "${PUBLISH_TO_XPOSED_REPO}" != "true" ]]; then
@@ -225,6 +225,8 @@ jobs:
     permissions:
       contents: read
     env:
+      # release job 也加上 TARGET_TAG
+      TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag || github.ref_name }}
       OFFICIAL_SIGNING_CERT_SHA256: ${{ needs.preflight.outputs.official_signing_cert_sha256 }}
       RELEASE_TAG_RAW: ${{ env.TARGET_TAG }}
     steps:
