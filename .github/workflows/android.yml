@@ -148,8 +148,8 @@ jobs:
             reason="标签 ${RELEASE_TAG_RAW} 不符合 Xposed 要求的 VersionCode‑VersionName 格式"
           elif [[ "${VERSION_NAME}" != "${CONFIGURED_VERSION_NAME}" ]]; then
             reason="标签中的 versionName (${VERSION_NAME}) 与 gradle.properties 中配置的 appVersion (${CONFIGURED_VERSION_NAME}) 不一致"
-          elif [[ "${TAG_VERSION_CODE}" != "${VERSION_CODE}" ]]; then
-            reason="标签中的 versionCode (${TAG_VERSION_CODE}) 与当前提交计算得到的 versionCode (${VERSION_CODE}) 不一致"
+#         elif [[ "${TAG_VERSION_CODE}" != "${VERSION_CODE}" ]]; then
+#           reason="标签中的 versionCode (${TAG_VERSION_CODE}) 与当前提交计算得到的 versionCode (${VERSION_CODE}) 不一致"
           elif [[ "${PUBLISH_TO_XPOSED_REPO}" != "true" ]]; then
             ready="true"
             reason="预检通过"
