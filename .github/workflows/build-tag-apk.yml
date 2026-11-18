@@ -1,0 +1,138 @@
+name: Build Tag APK
+
+run-name: Build Tag APK - ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to build (e.g. 4380-0.2.6)"
+        required: true
+        default: "4380-0.2.6"
+        type: string
+
+env:
+  CI: "true"
+  JAVA_DISTRIBUTION: "oracle"
+  JAVA_VERSION: "17.0.1"
+  ANDROID_API_LEVEL: "37"
+  ANDROID_PLATFORM: "android-37.0"
+  ANDROID_BUILD_TOOLS: "37.0.0"
+  RELEASE_DIR: app/build/outputs/apk/release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Set Timezone to Asia/Shanghai
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo timedatectl set-timezone Asia/Shanghai
+          date
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Show source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          git describe --tags --always
+          git log -1 --format='%H %ad %s' --date=iso
+          echo "commit-count=$(git rev-list --count HEAD)"
+          grep -E '^appVersion=' gradle.properties
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          architecture: x64
+          check-latest: false
+          cache: gradle
+
+      - name: Pin Gradle Java Home
+        shell: bash
+        run: echo "ORG_GRADLE_JAVA_HOME=${JAVA_HOME}" >> "$GITHUB_ENV"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ""
+
+      - name: Install Required Android SDK Packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-version: wrapper
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Print Toolchain Versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          sdkmanager --version
+          ./gradlew --version
+
+      - name: Build Release APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Inspect And Verify APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find "${RELEASE_DIR}" -maxdepth 1 -type f -name "*.apk" | sort)
+          if [[ ${#apks[@]} -eq 0 ]]; then
+            echo "No release APKs found in ${RELEASE_DIR}" >&2
+            exit 1
+          fi
+          android_sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          aapt2="${android_sdk_root}/build-tools/${ANDROID_BUILD_TOOLS}/aapt2"
+          apksigner="${android_sdk_root}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner"
+          for apk in "${apks[@]}"; do
+            echo "===== ${apk} ($(du -h "${apk}" | cut -f1)) ====="
+            "${aapt2}" dump badging "${apk}" 2>/dev/null | grep -E "^package:|^application-label:|^sdkVersion:|^targetSdkVersion:" || true
+            "${apksigner}" verify --verbose --print-certs "${apk}" | head -12 || true
+          done
+
+      - name: Package APK Artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/apk"
+          cp "${RELEASE_DIR}"/*.apk "${RUNNER_TEMP}/apk/"
+          (cd "${RUNNER_TEMP}/apk" && sha256sum *.apk > SHA256SUMS.txt)
+          ls -l "${RUNNER_TEMP}/apk"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Sesame-AG-${{ inputs.tag }}
+          path: ${{ runner.temp }}/apk/*
+          if-no-files-found: error
+          retention-days: 5
